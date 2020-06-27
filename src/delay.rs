@@ -7,6 +7,9 @@ use cortex_m::peripheral::SYST;
 use crate::hal::blocking::delay::{DelayMs, DelayUs};
 use crate::rcc::Clocks;
 
+/// SysTick Reload Value has a max value of 0x00FFFFFF
+const MAX_RVR: u32 = 0x00FF_FFFF;
+
 /// System timer (SysTick) as a delay provider
 pub struct Delay {
     clocks: Clocks,
@@ -47,17 +50,25 @@ impl DelayMs<u8> for Delay {
 
 impl DelayUs<u32> for Delay {
     fn delay_us(&mut self, us: u32) {
-        let rvr = us * (self.clocks.sysclk().0 / 1_000_000);
+        let mut rvr = us * (self.clocks.sysclk().0 / 1_000_000);
 
-        // assert!(rvr < (1 << 24)); //TODO fix this assertion
+        while rvr != 0 {
+            let current_rvr = if rvr <= MAX_RVR {
+                rvr
+            } else {
+                MAX_RVR
+            };
 
-        self.syst.set_reload(rvr);
-        self.syst.clear_current();
-        self.syst.enable_counter();
+            self.syst.set_reload(current_rvr);
+            self.syst.clear_current();
+            self.syst.enable_counter();
 
-        while !self.syst.has_wrapped() {}
+            rvr -= current_rvr;
 
-        self.syst.disable_counter();
+            while !self.syst.has_wrapped() {}
+
+            self.syst.disable_counter();
+        }        
     }
 }
 
